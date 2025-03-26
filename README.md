@@ -1,4 +1,4 @@
-# File Drive - Cloud Storage Application
+# Design GoogleDrive/Dropbox: File Drive - Cloud Storage Application
 
 A secure, scalable file storage backend built with Spring Boot that integrates with AWS S3 for efficient file storage, retrieval, and sharing capabilities.
 
@@ -18,10 +18,10 @@ A secure, scalable file storage backend built with Spring Boot that integrates w
 - **User Authentication:** Authentication using Firebase
 
 ## Demo
-![Demo](https://github.com/rahul07bagul/FileDrive/blob/main/assets/File_Drive_Video.gif)
+![Demo](https://github.com/rahul07bagul/Design-a-File-Storage-Service/blob/main/assets/File_Drive_Video.gif)
 
 ## High Level Design
-![HLD](https://github.com/rahul07bagul/FileDrive/blob/main/assets/High%20Level.png)
+![HLD](https://github.com/rahul07bagul/Design-a-File-Storage-Service/blob/main/assets/High%20Level.png)
 
 ## Architecture
 
@@ -41,25 +41,7 @@ The application leverages AWS S3 for storing user files with the following imple
 - **S3Service.java:** Handles all interactions with AWS S3, including:
   - Generating pre-signed URLs for secure file uploads
   - Creating pre-signed download URLs with expiration
-
-```java
-// Pre-signed URL generation for secure direct upload
-public String generatePresignedUploadUrl(String objectKey, Duration expiration) {
-    PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-            .bucket(bucketName)
-            .key(objectKey)
-            .build();
-
-    PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-            .signatureDuration(expiration)
-            .putObjectRequest(putObjectRequest)
-            .build();
-
-    PresignedPutObjectRequest presignedRequest = presigner.presignPutObject(presignRequest);
-
-    return presignedRequest.url().toString();
-}
-```
+  - Creating Multipart upload for large files, AWS S3 manages whole process.
 
 ### File Upload Flow
 
@@ -148,6 +130,76 @@ The system enables file sharing through the following components:
 - **SharePermission enum:** Defines access levels (READ)
 - **File sharing endpoint:** `/api/v1/drive/file/share` for creating shares
 
+### How am I supporting large files and resumable uploads?
+- Deciding Upload Strategy (Client-Side)
+  - If the file size exceeds 10MB, we use multipart upload.
+  - Otherwise, we upload the file directly using a pre-signed URL.
+- Initiating Multipart Upload (Backend)
+  - The client sends a request to initiate a multipart upload.
+  - The backend creates an S3 multipart upload request and receives an uploadId.
+  - The uploadId is stored in FileMetadata, and each chunk is tracked in FileChunk.
+- Chunking & Uploading Parts (Client-Side)
+  - The client splits the file into chunks (e.g., 5MB per chunk).
+  - For each chunk:
+    - The client requests a pre-signed URL from the backend.
+    - The chunk is uploaded directly to S3.
+    - The backend updates FileChunk with the chunk's upload status (uploaded or pending).
+- Completing the Multipart Upload
+  - Once all chunks are uploaded, the client calls completeMultipartUpload.
+  - S3 merges all chunks into a single file.
+  - The backend updates metadata and stores the final S3 URL in FileMetadata.
+- Handling Upload Failures (Resumable Uploads)
+  - If an upload fails or stops: the status of uploaded chunks is stored in FileChunk.
+  - When the client revisits:
+    - The backend retrieves uploaded chunks and offers an option to resume.
+    - The user reselects the file, and its metadata (size, name, last modified date) is validated.
+    - Already uploaded chunks are skipped, and only remaining chunks are uploaded (from client side).
+
+```bash
+┌─────────┐          ┌────────────┐          ┌─────────┐
+│  Client │          │  Backend   │          │   AWS   │
+│         │          │  Service   │          │   S3    │
+└────┬────┘          └─────┬──────┘          └────┬────┘
+     │                     │                      │
+     │ 1. Decide Upload    │                      │
+     │─────────────────────>                      │
+     │                     │                      │
+     │ 2. Initiate Upload  │                      │
+     │─────────────────────>                      │
+     │                     │ 3. Create Multipart  │
+     │                     │    Upload Request    │
+     │                     │────────────────────> │
+     │                     │                      │
+     │                     │ 4. Receive UploadId  │
+     │                     │<──────────────────── │
+     │                     │                      │
+     │ 5. Split File       │                      │
+     │                     │                      │
+     │ 6. Request URLs for │                      │
+     │    Each Chunk       │                      │
+     │─────────────────────>                      │
+     │                     │ 7. Generate URLs     │
+     │                     │────────────────────> │
+     │                     │                      │
+     │ 8. Receive URLs     │                      │
+     │<─────────────────────                      │
+     │                     │                      │
+     │ 9. Upload Chunks    │                      │
+     │───────────────────────────────────────────>│
+     │                     │                      │
+     │ 10. Track Chunk     │                      │
+     │     Upload Status   │                      │
+     │─────────────────────>                      │
+     │                     │                      │
+     │ 11. Complete Upload │                      │
+     │─────────────────────>                      │
+     │                     │ 12. Merge Chunks     │
+     │                     │────────────────────> │
+     │                     │                      │
+     │ 13. Upload Complete │                      │
+     │<─────────────────────                      │
+```
+
 ## Setting Up the Backend
 
 ### Prerequisites
@@ -185,18 +237,3 @@ server.port=8080
 ```bash
 mvn clean install
 ```
-
-## API Endpoints
-
-| Method | Endpoint                                | Description                                |
-|--------|----------------------------------------|--------------------------------------------|
-| POST   | `/api/v1/drive/upload/file`           | Generate pre-signed URL for file upload    |
-| GET    | `/api/v1/drive/download/file/{fileId}` | Generate pre-signed URL for file download |
-| GET    | `/api/v1/drive/files/{userId}`        | List all files for a specific user         |
-| GET    | `/api/v1/drive/file/{uniqueFileId}`   | Get details for a specific file            |
-| POST   | `/api/v1/drive/file/share`            | Share a file with other users              |
-| GET    | `/api/v1/drive/files/shared/{userId}` | List files shared with a user              |
-| DELETE | `/api/v1/drive/file/delete/{fileId}`  | Delete a file                              |
-| POST   | `/api/v1/drive/auth/user`             | Authenticate a new/existing user using firebase token                    |
-| GET    | `/api/v1/drive/users/search/{searchKeyword}` | Search for users                    |
-
