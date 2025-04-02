@@ -3,6 +3,7 @@
 A secure, scalable file storage backend built with Spring Boot that integrates with AWS S3 for efficient file storage, retrieval, and sharing capabilities.
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Java-F2F4F9?style=for-the-badge&logo=java" alt="Java">
   <img src="https://img.shields.io/badge/Spring_Boot-F2F4F9?style=for-the-badge&logo=spring-boot" alt="Spring Boot">
   <img src="https://img.shields.io/badge/AWS_S3-569A31?style=for-the-badge&logo=amazonaws&logoColor=white" alt="AWS S3">
   <img src="https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL">
